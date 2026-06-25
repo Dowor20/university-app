@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 const path = require('path');
 const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
 
 let mainWindow;
@@ -11,81 +12,131 @@ let server;
 // =============================================
 
 function startServer() {
-    return new Promise((resolve, reject) => {
-        const appServer = express();
+    const appServer = express();
+    
+    appServer.use(cors());
+    appServer.use(express.json());
+    appServer.use(express.urlencoded({ extended: true }));
+    appServer.use(express.static(path.join(__dirname, 'public')));
+    
+    appServer.use((req, res, next) => {
+        console.log(`📨 ${req.method} ${req.url}`);
+        next();
+    });
+    
+    try {
+        const authRoutes = require('./routes/auth');
+        const teacherRoutes = require('./routes/teachers');
+        const loadRoutes = require('./routes/load');
         
-        // Middleware
-        appServer.use(express.json());
-        appServer.use(express.urlencoded({ extended: true }));
-        appServer.use(express.static(path.join(__dirname, 'public')));
+        appServer.use('/api/auth', authRoutes);
+        appServer.use('/api/teachers', teacherRoutes);
+        appServer.use('/api/load', loadRoutes);
         
-        // Подключение маршрутов
-        try {
-            const authRoutes = require('./routes/auth');
-            const teacherRoutes = require('./routes/teachers');
-            const loadRoutes = require('./routes/load');
-            
-            appServer.use('/api/auth', authRoutes);
-            appServer.use('/api/teachers', teacherRoutes);
-            appServer.use('/api/load', loadRoutes);
-        } catch (err) {
-            console.error('Ошибка загрузки маршрутов:', err);
+        console.log('✅ Маршруты загружены');
+    } catch (err) {
+        console.error('❌ Ошибка загрузки маршрутов:', err.message);
+    }
+    
+    const PORT = 3000;
+    server = appServer.listen(PORT, 'localhost', () => {
+        console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
+    });
+    
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`❌ Порт ${PORT} занят.`);
+            dialog.showErrorBox('Ошибка', `Порт ${PORT} уже используется.`);
+        } else {
+            console.error('❌ Ошибка сервера:', err);
         }
-        
-        // Запуск сервера на случайном порту
-        const PORT = process.env.PORT || 3000;
-        server = appServer.listen(PORT, () => {
-            console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
-            resolve(PORT);
-        });
-        
-        server.on('error', reject);
     });
 }
+
+// =============================================
+// IPC ОБРАБОТЧИКИ (ГЛАВНОЕ!)
+// =============================================
+
+// 1. Обработчик авторизации
+ipcMain.handle('login', async (event, login, password) => {
+    console.log(`🔐 Попытка входа: ${login}`);
+    
+    try {
+        // Используем модель Teacher для проверки
+        const Teacher = require('./models/Teacher');
+        const teacher = await Teacher.findByCredentials(login, password);
+        
+        if (teacher) {
+            console.log(`✅ Вход выполнен: ${teacher.ФИО}`);
+            return teacher;
+        } else {
+            console.log(`❌ Неверный логин или пароль`);
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ Ошибка авторизации:', error.message);
+        return null;
+    }
+});
+
+// 2. Обработчик получения преподавателей
+ipcMain.handle('getTeachers', async () => {
+    console.log('📋 Запрос списка преподавателей');
+    
+    try {
+        const Teacher = require('./models/Teacher');
+        const teachers = await Teacher.getAll();
+        console.log(`✅ Найдено ${teachers.length} преподавателей`);
+        return teachers;
+    } catch (error) {
+        console.error('❌ Ошибка получения преподавателей:', error.message);
+        return [];
+    }
+});
+
+// 3. Обработчик получения нагрузки
+ipcMain.handle('getTeachersLoad', async () => {
+    console.log('📊 Запрос нагрузки преподавателей');
+    
+    try {
+        const Load = require('./models/Load');
+        const load = await Load.getAllTeachersLoad();
+        console.log(`✅ Найдено ${load.length} записей нагрузки`);
+        return load;
+    } catch (error) {
+        console.error('❌ Ошибка получения нагрузки:', error.message);
+        return [];
+    }
+});
 
 // =============================================
 // СОЗДАНИЕ ГЛАВНОГО ОКНА
 // =============================================
 
-async function createWindow() {
-    // Запускаем сервер
-    const port = await startServer();
-    
+function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
         minWidth: 800,
         minHeight: 600,
-        icon: path.join(__dirname, 'assets', 'icon.ico'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js')
         },
-        frame: true,
-        show: false // Показываем только после загрузки
+        show: false
     });
 
-    // Загружаем приложение
-    mainWindow.loadURL(`http://localhost:${port}`);
+    mainWindow.loadURL('http://localhost:3000');
 
-    // Показываем окно после загрузки
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
     });
 
-    // Открываем DevTools только в режиме разработки
-    if (process.env.NODE_ENV === 'development') {
-        mainWindow.webContents.openDevTools();
-    }
+    mainWindow.webContents.openDevTools();
 
-    // Обработка ошибок загрузки
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-        console.error('Ошибка загрузки:', errorDescription);
-        // Пробуем перезагрузить
-        setTimeout(() => {
-            mainWindow.loadURL(`http://localhost:${port}`);
-        }, 1000);
+        console.error('❌ Ошибка загрузки:', errorDescription);
     });
 
     mainWindow.on('closed', () => {
@@ -94,7 +145,7 @@ async function createWindow() {
 }
 
 // =============================================
-// СОЗДАНИЕ МЕНЮ (упрощенное)
+    // СОЗДАНИЕ МЕНЮ
 // =============================================
 
 function createMenu() {
@@ -102,130 +153,39 @@ function createMenu() {
         {
             label: 'Файл',
             submenu: [
-                {
-                    label: 'Обновить',
-                    accelerator: 'CmdOrCtrl+R',
-                    click() {
-                        if (mainWindow) mainWindow.reload();
-                    }
-                },
+                { role: 'reload' },
                 { type: 'separator' },
-                {
-                    label: 'Выход',
-                    accelerator: 'CmdOrCtrl+Q',
-                    click() {
-                        app.quit();
-                    }
-                }
+                { role: 'quit' }
             ]
         },
         {
             label: 'Вид',
             submenu: [
-                {
-                    label: 'Перезагрузить',
-                    accelerator: 'CmdOrCtrl+Shift+R',
-                    click() {
-                        if (mainWindow) mainWindow.reload();
-                    }
-                },
+                { role: 'toggleDevTools' },
                 { type: 'separator' },
-                {
-                    label: 'Увеличить масштаб',
-                    accelerator: 'CmdOrCtrl+=',
-                    click() {
-                        if (mainWindow) mainWindow.webContents.zoomIn();
-                    }
-                },
-                {
-                    label: 'Уменьшить масштаб',
-                    accelerator: 'CmdOrCtrl+-',
-                    click() {
-                        if (mainWindow) mainWindow.webContents.zoomOut();
-                    }
-                },
-                {
-                    label: 'Сбросить масштаб',
-                    accelerator: 'CmdOrCtrl+0',
-                    click() {
-                        if (mainWindow) mainWindow.webContents.zoomLevel = 0;
-                    }
-                },
-                { type: 'separator' },
-                {
-                    label: 'Полноэкранный режим',
-                    accelerator: 'F11',
-                    click() {
-                        if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
-                    }
-                },
-                {
-                    label: 'DevTools',
-                    accelerator: 'F12',
-                    click() {
-                        if (mainWindow) mainWindow.webContents.openDevTools();
-                    }
-                }
-            ]
-        },
-        {
-            label: 'Справка',
-            submenu: [
-                {
-                    label: 'О программе',
-                    click() {
-                        dialog.showMessageBox(mainWindow, {
-                            type: 'info',
-                            title: 'О программе',
-                            message: 'Информационная система кафедры',
-                            detail: 'Версия: 1.0.0\n© 2024 Все права защищены'
-                        });
-                    }
-                }
+                { role: 'toggleFullScreen' }
             ]
         }
     ];
-
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
 }
 
 // =============================================
-// ЗАПУСК ПРИЛОЖЕНИЯ
+// ЗАПУСК
 // =============================================
 
-app.whenReady().then(async () => {
-    try {
-        // Создаем окно
-        await createWindow();
-        
-        // Создаем меню
-        createMenu();
-    } catch (error) {
-        console.error('Ошибка запуска:', error);
-        dialog.showErrorBox('Ошибка', 'Не удалось запустить приложение:\n' + error.message);
-        app.quit();
-    }
+app.whenReady().then(() => {
+    startServer();
+    createWindow();
+    createMenu();
 });
 
-// Закрытие приложения
 app.on('window-all-closed', () => {
-    if (server) {
-        server.close();
-    }
-    if (process.platform !== 'darwin') {
-        app.quit();
-    }
-});
-
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-    }
+    if (server) server.close();
+    if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-    if (server) {
-        server.close();
-    }
+    if (server) server.close();
 });
