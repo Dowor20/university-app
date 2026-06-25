@@ -1,0 +1,60 @@
+{
+  "name": "university-app-desktop",
+  "version": "1.0.0",
+  "description": "Информационная система кафедры (Desktop)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "set NODE_ENV=development && electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win --x64",
+    "dist": "electron-builder --win --x64 --ia32"
+  },
+  "build": {
+    "appId": "com.university.department",
+    "productName": "Кафедра ИС",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "config/**/*",
+      "controllers/**/*",
+      "models/**/*",
+      "routes/**/*",
+      "public/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Ваше имя"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Кафедра ИС"
+    },
+    "portable": {
+      "artifactName": "Кафедра_ИС_портабельная.exe"
+    }
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mssql": "^10.0.1",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "jsonwebtoken": "^9.0.2",
+    "electron": "^27.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.6.4"
+  }
+}

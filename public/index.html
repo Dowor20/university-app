@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Авторизация - Кафедра</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 420px;
+            max-width: 95%;
+        }
+        .login-box h1 { font-size: 22px; text-align: center; color: #333; }
+        .login-box h2 { font-size: 16px; text-align: center; color: #666; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; }
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .error { color: #e53e3e; text-align: center; margin-top: 15px; display: none; }
+        .test-accounts { margin-top: 20px; padding: 15px; background: #f7fafc; border-radius: 8px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h1>🏫 Информационная система кафедры</h1>
+        <h2>Вход в систему</h2>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label>Логин:</label>
+                <input type="text" id="login" placeholder="Введите логин" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Пароль:</label>
+                <input type="password" id="password" placeholder="Введите пароль" required>
+            </div>
+            
+            <button type="submit" id="loginBtn">Войти</button>
+            
+            <div id="errorMessage" class="error"></div>
+        </form>
+        
+        <div class="test-accounts">
+            <p><strong>Тестовые учетные записи:</strong></p>
+            <p>Логин: grakova_uv | Пароль: pass123</p>
+            <p>Логин: kostina_vv | Пароль: pass123</p>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const login = document.getElementById('login').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('errorMessage');
+            
+            try {
+                let response;
+                
+                // Проверяем, есть ли Electron API
+                if (window.electronAPI && window.electronAPI.login) {
+                    const result = await window.electronAPI.login(login, password);
+                    if (result) {
+                        localStorage.setItem('token', 'electron-token');
+                        localStorage.setItem('user', JSON.stringify(result));
+                        window.location.href = '/dashboard.html';
+                    } else {
+                        errorDiv.textContent = 'Неверный логин или пароль!';
+                        errorDiv.style.display = 'block';
+                    }
+                } else {
+                    // Обычный fetch
+                    response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ login, password })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        localStorage.setItem('token', data.token);
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                        window.location.href = '/dashboard.html';
+                    } else {
+                        errorDiv.textContent = data.message || 'Неверный логин или пароль!';
+                        errorDiv.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                errorDiv.textContent = 'Ошибка соединения с сервером';
+                errorDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
