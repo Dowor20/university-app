@@ -1,10 +1,11 @@
 const { poolPromise, sql } = require('../config/db');
 
 class Teacher {
-    // Получить всех преподавателей
     static async getAll() {
         try {
             const pool = await poolPromise;
+            if (!pool) return [];
+            
             const result = await pool.request()
                 .query(`
                     SELECT 
@@ -22,14 +23,16 @@ class Teacher {
                 `);
             return result.recordset;
         } catch (error) {
-            throw error;
+            console.error('Ошибка Teacher.getAll:', error);
+            return [];
         }
     }
 
-    // Найти преподавателя по логину и паролю
     static async findByCredentials(login, password) {
         try {
             const pool = await poolPromise;
+            if (!pool) return null;
+            
             const result = await pool.request()
                 .input('login', sql.NVarChar, login)
                 .input('password', sql.NVarChar, password)
@@ -47,33 +50,8 @@ class Teacher {
                 `);
             return result.recordset[0];
         } catch (error) {
-            throw error;
-        }
-    }
-
-    // Получить преподавателя по ID
-    static async findById(id) {
-        try {
-            const pool = await poolPromise;
-            const result = await pool.request()
-                .input('id', sql.Int, id)
-                .query(`
-                    SELECT 
-                        id,
-                        фамилия,
-                        имя,
-                        отчество,
-                        фамилия + ' ' + имя + ' ' + отчество AS ФИО,
-                        категория,
-                        оклад,
-                        адрес,
-                        логин
-                    FROM Преподаватель
-                    WHERE id = @id
-                `);
-            return result.recordset[0];
-        } catch (error) {
-            throw error;
+            console.error('Ошибка Teacher.findByCredentials:', error);
+            return null;
         }
     }
 }

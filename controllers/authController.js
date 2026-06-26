@@ -1,30 +1,56 @@
-const Teacher = require('../models/Teacher');
+const { poolPromise, sql } = require('../config/db');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const authController = {
-    // Авторизация пользователя
     async login(req, res) {
         try {
             const { login, password } = req.body;
             
+            console.log('🔐 Login attempt:', login);
+            
             if (!login || !password) {
                 return res.status(400).json({
                     success: false,
-                    message: 'Логин и пароль обязательны'
+                    message: 'Login and password required'
                 });
             }
 
-            const teacher = await Teacher.findByCredentials(login, password);
-            
-            if (!teacher) {
+            const pool = await poolPromise;
+            if (!pool) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Database connection error'
+                });
+            }
+
+            const result = await pool.request()
+                .input('login', sql.NVarChar, login)
+                .input('password', sql.NVarChar, password)
+                .query(`
+                    SELECT 
+                        id,
+                        фамилия,
+                        имя,
+                        отчество,
+                        фамилия + ' ' + имя + ' ' + отчество AS ФИО,
+                        категория,
+                        оклад
+                    FROM Преподаватель
+                    WHERE логин = @login AND пароль = @password
+                `);
+
+            console.log('📊 Found records:', result.recordset.length);
+
+            if (result.recordset.length === 0) {
                 return res.status(401).json({
                     success: false,
-                    message: 'Неверный логин или пароль'
+                    message: 'Invalid login or password'
                 });
             }
 
-            // Создание JWT токена
+            const teacher = result.recordset[0];
+
             const token = jwt.sign(
                 { 
                     id: teacher.id,
@@ -47,33 +73,10 @@ const authController = {
             });
 
         } catch (error) {
-            console.error('Ошибка авторизации:', error);
+            console.error('❌ Auth error:', error);
             res.status(500).json({
                 success: false,
-                message: 'Внутренняя ошибка сервера'
-            });
-        }
-    },
-
-    // Проверка токена
-    verifyToken(req, res, next) {
-        const token = req.headers['authorization']?.split(' ')[1];
-        
-        if (!token) {
-            return res.status(401).json({
-                success: false,
-                message: 'Токен не предоставлен'
-            });
-        }
-
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key');
-            req.user = decoded;
-            next();
-        } catch (error) {
-            return res.status(403).json({
-                success: false,
-                message: 'Недействительный токен'
+                message: 'Internal server error: ' + error.message
             });
         }
     }
